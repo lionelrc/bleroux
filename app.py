@@ -58,4 +58,48 @@ def initialize_chain(documents=None):
 st.title("PDF Document Assistant")
 
 # File uploader
-uploaded_file = st.file_uploader("Upload a PDF document",
+uploaded_file = st.file_uploader("Upload a PDF document", type="pdf")
+
+# Initialize or update session state
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "chain" not in st.session_state:
+    st.session_state.chain = None
+
+# Process uploaded file
+if uploaded_file and (not st.session_state.chain or "current_file" not in st.session_state or st.session_state.current_file != uploaded_file.name):
+    with st.spinner("Processing document..."):
+        documents = process_pdf(uploaded_file)
+        st.session_state.chain = initialize_chain(documents)
+        st.session_state.current_file = uploaded_file.name
+        st.success("Document processed successfully!")
+
+# Display chat interface only if chain is initialized
+if st.session_state.chain:
+    # Display chat messages
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # Chat input
+    if prompt := st.chat_input("Ask a question about your document"):
+        # Add user message to chat history
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        
+        # Get AI response
+        response = st.session_state.chain({
+            "question": prompt,
+            "chat_history": [(m["content"], r["content"]) 
+                            for m, r in zip(st.session_state.messages[::2], 
+                                          st.session_state.messages[1::2])]
+        })
+        
+        # Add AI response to chat history
+        ai_response = response["answer"]
+        st.session_state.messages.append({"role": "assistant", "content": ai_response})
+        with st.chat_message("assistant"):
+            st.markdown(ai_response)
+else:
+    st.info("Upload a PDF document to start chatting!")
