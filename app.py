@@ -6,24 +6,35 @@ from langchain_anthropic import ChatAnthropic
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.chains import ConversationalRetrievalChain
 import os
+from tempfile import NamedTemporaryFile
 
 # Use Streamlit secrets for API key
 if "ANTHROPIC_API_KEY" not in st.secrets:
     st.error("ANTHROPIC_API_KEY not found in secrets. Please add it to your .streamlit/secrets.toml file or Streamlit Cloud secrets.")
     st.stop()
 
-def initialize_chain():
-    documents = []
-    for file in os.listdir("documents"):
-        if file.endswith(".pdf"):
-            loader = PyPDFLoader(f"documents/{file}")
-            documents.extend(loader.load())
+def process_pdf(uploaded_file):
+    with NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+        tmp_file.write(uploaded_file.getvalue())
+        loader = PyPDFLoader(tmp_file.name)
+        documents = loader.load()
+        os.unlink(tmp_file.name)  # Delete the temporary file
+        return documents
+
+def initialize_chain(documents=None):
+    if not documents:
+        st.warning("Please upload a PDF document to start.")
+        return None
     
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000,
         chunk_overlap=100
     )
     splits = text_splitter.split_documents(documents)
+    
+    if not splits:
+        st.warning("No text content found in the uploaded document.")
+        return None
     
     embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
     vectorstore = Chroma.from_documents(
@@ -46,34 +57,5 @@ def initialize_chain():
 # Streamlit interface
 st.title("PDF Document Assistant")
 
-# Initialize session state
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "chain" not in st.session_state:
-    st.session_state.chain = initialize_chain()
-
-# Display chat messages
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-# Chat input
-if prompt := st.chat_input("Ask a question about your documents"):
-    # Add user message to chat history
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    
-    # Get AI response
-    response = st.session_state.chain({
-        "question": prompt,
-        "chat_history": [(m["content"], r["content"]) 
-                        for m, r in zip(st.session_state.messages[::2], 
-                                      st.session_state.messages[1::2])]
-    })
-    
-    # Add AI response to chat history
-    ai_response = response["answer"]
-    st.session_state.messages.append({"role": "assistant", "content": ai_response})
-    with st.chat_message("assistant"):
-        st.markdown(ai_response)
+# File uploader
+uploaded_file = st.file_uploader("Upload a PDF document",
