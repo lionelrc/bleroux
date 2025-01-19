@@ -1,0 +1,10 @@
+streamlit
+langchain
+langchain-community
+langchain-anthropic
+sentence-transformers
+chromadb
+pypdf
+unstructured
+anthropic
+pillow
