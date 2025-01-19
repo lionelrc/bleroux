@@ -8,6 +8,11 @@ from langchain.chains import ConversationalRetrievalChain
 import os
 from tempfile import NamedTemporaryFile
 
+# Create a directory for ChromaDB
+CHROMA_DB_DIR = "chroma_db"
+if not os.path.exists(CHROMA_DB_DIR):
+    os.makedirs(CHROMA_DB_DIR)
+
 # Use Streamlit secrets for API key
 if "ANTHROPIC_API_KEY" not in st.secrets:
     st.error("ANTHROPIC_API_KEY not found in secrets. Please add it to your .streamlit/secrets.toml file or Streamlit Cloud secrets.")
@@ -37,10 +42,14 @@ def initialize_chain(documents=None):
         return None
     
     embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    
+    # Initialize ChromaDB with persistent directory
     vectorstore = Chroma.from_documents(
         documents=splits,
-        embedding=embeddings
+        embedding=embeddings,
+        persist_directory=CHROMA_DB_DIR
     )
+    vectorstore.persist()  # Make sure to persist the database
     
     chain = ConversationalRetrievalChain.from_llm(
         llm=ChatAnthropic(
@@ -53,6 +62,11 @@ def initialize_chain(documents=None):
     )
     
     return chain
+
+# Add to .gitignore
+if not os.path.exists(".gitignore"):
+    with open(".gitignore", "a") as f:
+        f.write("\nchroma_db/\n")
 
 # Streamlit interface
 st.title("PDF Document Assistant")
@@ -88,18 +102,21 @@ if st.session_state.chain:
         with st.chat_message("user"):
             st.markdown(prompt)
         
-        # Get AI response
-        response = st.session_state.chain({
-            "question": prompt,
-            "chat_history": [(m["content"], r["content"]) 
-                            for m, r in zip(st.session_state.messages[::2], 
-                                          st.session_state.messages[1::2])]
-        })
-        
-        # Add AI response to chat history
-        ai_response = response["answer"]
-        st.session_state.messages.append({"role": "assistant", "content": ai_response})
-        with st.chat_message("assistant"):
-            st.markdown(ai_response)
+        try:
+            # Get AI response
+            response = st.session_state.chain({
+                "question": prompt,
+                "chat_history": [(m["content"], r["content"]) 
+                                for m, r in zip(st.session_state.messages[::2], 
+                                              st.session_state.messages[1::2])]
+            })
+            
+            # Add AI response to chat history
+            ai_response = response["answer"]
+            st.session_state.messages.append({"role": "assistant", "content": ai_response})
+            with st.chat_message("assistant"):
+                st.markdown(ai_response)
+        except Exception as e:
+            st.error(f"An error occurred: {str(e)}")
 else:
     st.info("Upload a PDF document to start chatting!")
